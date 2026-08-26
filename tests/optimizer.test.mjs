@@ -53,7 +53,7 @@ test("Kohortenminimum Jahrgang plus Bildungsgang wird eingehalten", () => {
   assert.equal(result.courseResults[0].cohorts[0].count, 3);
 });
 
-test("Nicht erfüllbares Kohortenminimum wird mit Fehler abgelehnt", () => {
+test("Nicht erfüllbares Kohortenminimum liefert eine vollständige Bestmöglich-Zuteilung", () => {
   const data = {
     name: "Kohorte unmöglich",
     settings: { allowOutside: false, defaultMode: "Pflicht", balanceWeight: 1, cohortMin: 3 },
@@ -65,8 +65,10 @@ test("Nicht erfüllbares Kohortenminimum wird mit Fehler abgelehnt", () => {
     locks: [],
   };
   const result = optimizeEvent(data);
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.some((message) => message.includes("Kohortenregel") || message.includes("erforderlich")));
+  assert.equal(result.ok, true, result.errors?.join("\n"));
+  assert.equal(result.stats.unassigned, 0);
+  assert.ok(result.stats.ruleViolationCount >= 1);
+  assert.match(result.warnings.join(" "), /Bestmögliche Zuteilung.*Regelabweichung/i);
 });
 
 test("Pflichtkurs mit unerreichbarer Mindestbelegung wird abgelehnt", () => {
@@ -108,7 +110,7 @@ test('Bevorzugte Klassenregel blockiert die Lösung nicht', () => {
   assert.ok(result.stats.preferredRuleViolations >= 0);
 });
 
-test('Harte Jahrgangsregel wird entweder erfüllt oder mit Fehler abgelehnt', () => {
+test('Vorrangige Jahrgangsregel wird erfüllt oder als Bestmöglich-Abweichung ausgegeben', () => {
   const event = {
     name: 'Hard rule',
     settings: { allowOutside: false, balanceWeight: 10, balanceThreshold: 10, cohortMin: 0,
@@ -125,8 +127,9 @@ test('Harte Jahrgangsregel wird entweder erfüllt oder mit Fehler abgelehnt', ()
     ], locks: []
   };
   const result = optimizeEvent(event);
-  if (result.ok) assert.equal(result.stats.hardRuleViolations, 0);
-  else assert.match(result.errors.join(' '), /harte Regel/i);
+  assert.equal(result.ok, true, result.errors?.join('\n'));
+  assert.equal(result.stats.unassigned, 0);
+  if (result.stats.hardRuleViolations) assert.match(result.warnings.join(' '), /Bestmögliche Zuteilung/i);
 });
 
 test('Berechnungsqualität führt die erwartete Zahl Varianten aus', () => {
@@ -293,7 +296,7 @@ test('Nicht exakt erfüllbares Jahrgangsminimum liefert eine bestmögliche Lösu
   const result = optimizeEvent(event);
   assert.equal(result.ok, true, result.errors?.join('\n'));
   assert.equal(result.stats.gradeLimitDeviation, 1);
-  assert.match(result.warnings.join(' '), /bestmögliche Verteilung.*Jg\. 8.*mindestens 2/i);
+  assert.match(result.warnings.join(' '), /bestmögliche Zuteilung.*Jg\. 8.*mindestens 2/i);
 });
 
 test('Jahrgangsmaximum wird bei voll belegten Kursen durch Tauschaktionen erfüllt', () => {
@@ -326,6 +329,31 @@ test('Jahrgangsmaximum wird bei voll belegten Kursen durch Tauschaktionen erfül
   assert.equal(socialMedia.length, 12);
   assert.equal(socialMedia.filter((person) => String(person.className).startsWith('8')).length, 8);
   assert.equal(result.stats.unassigned, 0);
+});
+
+test('Jahrgangsmaximum verdrängt bei fehlendem Ausweichplatz niemanden aus dem Workshop', () => {
+  const event = {
+    name: 'Bestmöglich statt Nichtzuteilung',
+    settings: { allowOutside: false, defaultMode: 'Pflicht', balanceWeight: 0, balanceThreshold: 10, cohortMin: 0, qualityMode: 'fast', rules: [] },
+    workshops: [
+      { id: 'A', offerId: 'A', name: 'Forscherwerkstatt', session: '', gradeFrom: 8, gradeTo: 10, schoolForm: 'Alle', min: 1, max: 12, mode: 'Pflicht', cohortMin: 0,
+        gradeLimits: { '8': { min: null, max: 8 } } },
+    ],
+    participants: Array.from({ length: 11 }, (_, i) => ({
+      id: `P${i + 1}`, firstName: 'Acht', lastName: String(i + 1), className: '8a',
+      schoolForm: 'Regional', wishes: ['A', '', '', ''], fixed: '',
+    })),
+    locks: [],
+  };
+
+  const result = optimizeEvent(event);
+  assert.equal(result.ok, true, result.errors?.join('\n'));
+  assert.equal(result.stats.unassigned, 0);
+  assert.equal(result.courseResults[0].load, 11);
+  assert.equal(result.stats.gradeLimitDeviation, 3);
+  assert.equal(result.stats.ruleViolationCount, 1);
+  assert.match(result.warnings.join(' '), /Forscherwerkstatt.*Jg\. 8: 11 statt höchstens 8/i);
+  assert.ok(result.participantResults.every((person) => /Zugeordnet mit Regelhinweis/.test(person.note)));
 });
 
 test('Globale Jahrgangssuche findet eine nur über drei Kurse lösbare Verschiebungskette', () => {
@@ -372,22 +400,22 @@ test('Unvermeidbare Jahrgangsabweichung liefert eine bestmögliche Lösung statt
   assert.equal(result.ok, true, result.errors?.join('\n'));
   assert.equal(result.participantResults[0].workshopId, 'A');
   assert.equal(result.stats.gradeLimitDeviation, 1);
-  assert.equal(result.stats.hardRuleViolations, 0);
-  assert.ok(result.stats.preferredRuleViolations >= 1);
-  assert.match(result.warnings.join(' '), /bestmögliche Verteilung.*Jg\. 8/i);
+  assert.equal(result.stats.hardRuleViolations, 1);
+  assert.equal(result.stats.ruleViolationCount, 1);
+  assert.match(result.warnings.join(' '), /bestmögliche Zuteilung.*Jg\. 8/i);
 });
 
-test('Vierergruppenregel hält 8+9 und 10+ jeweils durch vier teilbar', () => {
+test('Jahrgangsgruppen-Regel hält 8+9 und 10+ jeweils durch vier teilbar', () => {
   const participants = [
     ...Array.from({ length: 5 }, (_, i) => ({ id: `S${i + 1}`, firstName: 'Sek', lastName: `I${i + 1}`, className: i < 3 ? '8a' : '9a', schoolForm: 'Regional', wishes: ['D','X','',''], fixed: '' })),
     ...Array.from({ length: 5 }, (_, i) => ({ id: `O${i + 1}`, firstName: 'Sek', lastName: `II${i + 1}`, className: `${10 + (i % 2)}a`, schoolForm: 'Gymnasial', wishes: ['D','X','',''], fixed: '' })),
     ...Array.from({ length: 2 }, (_, i) => ({ id: `X${i + 1}`, firstName: 'Andere', lastName: String(i + 1), className: i ? '10b' : '9b', schoolForm: i ? 'Gymnasial' : 'Regional', wishes: ['X','D','',''], fixed: '' })),
   ];
   const event = {
-    name: 'Jugend debattiert',
+    name: 'Jahrgangsgruppen',
     settings: { allowOutside: false, defaultMode: 'Pflicht', balanceWeight: 0, balanceThreshold: 10, cohortMin: 0, qualityMode: 'standard', rules: [] },
     workshops: [
-      { id: 'D', offerId: 'D', name: 'Jugend debattiert', session: '', gradeFrom: 8, gradeTo: 12, schoolForm: 'Alle', min: 8, max: 12, mode: 'Pflicht', cohortMin: 0, debateRule: { enabled: true, balance: true } },
+      { id: 'D', offerId: 'D', name: 'Gruppenworkshop', session: '', gradeFrom: 8, gradeTo: 12, schoolForm: 'Alle', min: 8, max: 12, mode: 'Pflicht', cohortMin: 0, gradeGroupRule: { enabled: true, balance: true } },
       { id: 'X', offerId: 'X', name: 'Alternativkurs', session: '', gradeFrom: 8, gradeTo: 12, schoolForm: 'Alle', min: 1, max: 12, mode: 'Pflicht', cohortMin: 0 },
     ],
     participants,
@@ -397,18 +425,18 @@ test('Vierergruppenregel hält 8+9 und 10+ jeweils durch vier teilbar', () => {
   const result = optimizeEvent(event);
   assert.equal(result.ok, true, result.errors?.join('\n'));
   const debate = result.courseResults.find((course) => course.id === 'D');
-  assert.deepEqual(debate.debateGroupSummary.map((item) => item.count % 4), [0, 0]);
+  assert.deepEqual(debate.gradeGroupSummary.map((item) => item.count % 4), [0, 0]);
   assert.equal(debate.ruleHardViolations, 0);
   assert.equal(result.stats.hardRuleViolations, 0);
-  assert.equal(result.stats.debateGroupImbalance, 0);
+  assert.equal(result.stats.gradeGroupImbalance, 0);
 });
 
-test('Nicht erfüllbare Vierergruppenregel liefert eine konkrete Fehlermeldung', () => {
+test('Nicht erfüllbare Jahrgangsgruppen-Regel behält alle Zuteilungen und warnt konkret', () => {
   const event = {
     name: 'Vierergruppe unmöglich',
     settings: { allowOutside: false, defaultMode: 'Pflicht', balanceWeight: 0, balanceThreshold: 10, cohortMin: 0, qualityMode: 'fast', rules: [] },
     workshops: [
-      { id: 'D', offerId: 'D', name: 'Jugend debattiert', session: '', gradeFrom: 7, gradeTo: 12, schoolForm: 'Alle', min: 4, max: 4, mode: 'Pflicht', cohortMin: 0, debateRule: { enabled: true, balance: true } },
+      { id: 'D', offerId: 'D', name: 'Gruppenworkshop', session: '', gradeFrom: 7, gradeTo: 12, schoolForm: 'Alle', min: 4, max: 4, mode: 'Pflicht', cohortMin: 0, gradeGroupRule: { enabled: true, balance: true } },
       { id: 'X', offerId: 'X', name: 'Alternativkurs', session: '', gradeFrom: 7, gradeTo: 12, schoolForm: 'Alle', min: 1, max: 4, mode: 'Pflicht', cohortMin: 0 },
     ],
     participants: [
@@ -422,14 +450,27 @@ test('Nicht erfüllbare Vierergruppenregel liefert eine konkrete Fehlermeldung',
   };
 
   const result = optimizeEvent(event);
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join(' '), /Sek I.*1 Schüler.*durch 4 teilbar/i);
+  assert.equal(result.ok, true, result.errors?.join('\n'));
+  assert.equal(result.stats.unassigned, 0);
+  assert.equal(result.stats.gradeGroupDeviation, 1);
+  assert.equal(result.courseResults.find((course) => course.id === 'D').ruleDeviations, 1);
+  assert.match(result.warnings.join(' '), /Bestmögliche Zuteilung.*Sek I.*Gruppengröße 4/i);
+  assert.match(result.participantResults.find((person) => person.workshopId === 'D').note, /Zugeordnet mit Regelhinweis/i);
 });
 
-test('Alte Projekte erhalten eine deaktivierte rückwärtskompatible Debattierregel', () => {
+test('Alte Projekte werden auf die neutral benannte Jahrgangsgruppen-Regel migriert', () => {
+  const normalized = normalizeEvent({
+    workshops: [{ id: 'A', offerId: 'A', name: 'Alt', gradeFrom: 7, gradeTo: 12, schoolForm: 'Alle', min: 0, max: 8, mode: 'Pflicht', debateRule: { enabled: true, balance: false } }],
+    participants: [], locks: [], settings: {},
+  });
+  assert.deepEqual(normalized.workshops[0].gradeGroupRule, { enabled: true, balance: false });
+  assert.equal(Object.hasOwn(normalized.workshops[0], 'debateRule'), false);
+});
+
+test('Projekte ohne Jahrgangsgruppen-Regel bleiben rückwärtskompatibel deaktiviert', () => {
   const normalized = normalizeEvent({
     workshops: [{ id: 'A', offerId: 'A', name: 'Alt', gradeFrom: 7, gradeTo: 12, schoolForm: 'Alle', min: 0, max: 8, mode: 'Pflicht' }],
     participants: [], locks: [], settings: {},
   });
-  assert.deepEqual(normalized.workshops[0].debateRule, { enabled: false, balance: true });
+  assert.deepEqual(normalized.workshops[0].gradeGroupRule, { enabled: false, balance: true });
 });

@@ -177,14 +177,14 @@ function gradeLimitSummary(workshop) {
     if (item.min !== null) return `Jg. ${item.grade}: ≥ ${item.min}`;
     return `Jg. ${item.grade}: ≤ ${item.max}`;
   });
-  if (workshop?.debateRule?.enabled) {
-    parts.push(`Vierergruppen 8/9 + 10+${workshop.debateRule.balance ? " · Ausgleich weich" : ""}`);
+  if (workshop?.gradeGroupRule?.enabled) {
+    parts.push(`Jahrgangsgruppen 8/9 + 10+ · Größe 4${workshop.gradeGroupRule.balance ? " · Ausgleich weich" : ""}`);
   }
   return parts.join(" · ") || "keine Vorgabe";
 }
 
-function debateGroupSummaryForPeople(workshop, people) {
-  if (!workshop?.debateRule?.enabled) return [];
+function gradeGroupSummaryForPeople(workshop, people) {
+  if (!workshop?.gradeGroupRule?.enabled) return [];
   const counts = { sekI: 0, sekII: 0 };
   for (const person of people || []) {
     const grade = gradeNumberFromClass(person.className);
@@ -210,11 +210,11 @@ function openGradeLimitsDialog(index) {
   if (!workshop) return;
   editingGradeLimitsWorkshopIndex = index;
   gradeLimitsDraft = JSON.parse(JSON.stringify(workshop.gradeLimits || {}));
-  $("#gradeLimitsTitle").textContent = `Jahrgangs- und Debattierregeln: ${workshopLabel(workshop)}`;
-  $("#gradeLimitsSubtitle").textContent = `Harte Vorgaben für diese Durchführung. Die gesamte Kursgröße bleibt zusätzlich zwischen ${workshop.min} und ${workshop.max}.`;
+  $("#gradeLimitsTitle").textContent = `Jahrgangs- und Gruppenregeln: ${workshopLabel(workshop)}`;
+  $("#gradeLimitsSubtitle").textContent = `Diese Zusammensetzungsregeln werden bestmöglich erfüllt. Die gesamte Kursgröße bleibt verbindlich zwischen ${workshop.min} und ${workshop.max}.`;
   renderGradeLimitsDialog();
-  $("#debateRuleEnabled").checked = workshop.debateRule?.enabled === true;
-  $("#debateBalanceEnabled").checked = workshop.debateRule?.balance !== false;
+  $("#debateRuleEnabled").checked = workshop.gradeGroupRule?.enabled === true;
+  $("#debateBalanceEnabled").checked = workshop.gradeGroupRule?.balance !== false;
   $("#debateBalanceEnabled").disabled = !$("#debateRuleEnabled").checked;
   $("#gradeLimitsDialog").showModal();
 }
@@ -229,7 +229,7 @@ function renderGradeLimitsDialog() {
     const limit = gradeLimitsDraft[String(grade)] || {};
     rows.push(`<tr><td><strong>Jahrgang ${grade}</strong></td><td><input type="number" min="0" max="500" step="1" data-grade="${grade}" data-grade-limit="min" value="${limit.min ?? ""}" placeholder="–"></td><td><input type="number" min="0" max="500" step="1" data-grade="${grade}" data-grade-limit="max" value="${limit.max ?? ""}" placeholder="–"></td></tr>`);
   }
-  $("#gradeLimitsTable").innerHTML = `<thead><tr><th>Jahrgang</th><th>Minimum (hart)</th><th>Maximum (hart)</th></tr></thead><tbody>${rows.join("")}</tbody>`;
+  $("#gradeLimitsTable").innerHTML = `<thead><tr><th>Jahrgang</th><th>Minimum (Ziel)</th><th>Maximum (Ziel)</th></tr></thead><tbody>${rows.join("")}</tbody>`;
 }
 
 function saveGradeLimitsDialog() {
@@ -252,14 +252,14 @@ function saveGradeLimitsDialog() {
     if (min !== null || max !== null) next[String(grade)] = { min, max };
   }
   workshop.gradeLimits = next;
-  workshop.debateRule = {
+  workshop.gradeGroupRule = {
     enabled: $("#debateRuleEnabled").checked,
     balance: $("#debateBalanceEnabled").checked,
   };
   commit();
   renderWorkshops();
   $("#gradeLimitsDialog").close();
-  toast("Jahrgangs- und Debattierregeln gespeichert.");
+  toast("Jahrgangs- und Gruppenregeln gespeichert.");
 }
 
 function nextSessionLabel(offerId) {
@@ -287,7 +287,7 @@ function renderDashboard() {
     [courseTypes().length, "Kursarten"],
     [state.workshops.length, "Durchführungen"],
     [state.workshops.filter((w) => w.mode === "Pflicht").length, "Pflichtkurse"],
-    [(state.settings.rules || []).filter((r) => r.enabled).length + state.workshops.filter((w) => w.debateRule?.enabled).length, "Aktive Regeln"],
+    [(state.settings.rules || []).filter((r) => r.enabled).length + state.workshops.filter((w) => w.gradeGroupRule?.enabled).length, "Aktive Regeln"],
     [state.participants.filter((p) => p.fixed).length, "Feste Setzungen"],
   ];
   $("#stats").innerHTML = cards.map(([value, label]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`).join("");
@@ -320,7 +320,7 @@ function renderRules() {
         ${["class","grade","gradeForm","gradeAnyForm"].map((type) => option(type, rule.type, ruleTypeName(type))).join("")}
       </select></td>
       <td><input type="number" min="2" max="20" step="1" data-rule-field="min" value="${rule.min}"></td>
-      <td><select data-rule-field="mode">${option("preferred", rule.mode, "Bevorzugt")}${option("hard", rule.mode, "Hart")}</select></td>
+      <td><select data-rule-field="mode">${option("preferred", rule.mode, "Bevorzugt")}${option("hard", rule.mode, "Vorrangig")}</select></td>
       <td><button class="icon-button" data-action="delete-rule" title="Regel löschen">×</button></td>
     </tr>`).join("") || `<tr><td colspan="5" class="muted">Keine zusätzliche Regel. Das ist völlig in Ordnung.</td></tr>`}</tbody>`;
 }
@@ -369,12 +369,12 @@ function renderWorkshops() {
       <td><input type="number" min="0" max="20" data-entity="workshop" data-field="cohortMin" value="${w.cohortMin ?? ""}" placeholder="global" title="leer = global, 0 = aus"></td>
       <td><input type="number" min="0" max="500" data-entity="workshop" data-field="min" value="${w.min}"></td>
       <td><input type="number" min="1" max="500" data-entity="workshop" data-field="max" value="${w.max}"></td>
-      <td class="grade-limit-cell"><button class="button compact-button grade-limit-button" type="button" data-action="edit-grade-limits" title="Jahrgangsgrenzen und Vierergruppen für Jugend debattiert festlegen">Jahrgänge & Debatte …</button><small>${escapeHtml(gradeLimitSummary(w))}</small></td>
+      <td class="grade-limit-cell"><button class="button compact-button grade-limit-button" type="button" data-action="edit-grade-limits" title="Jahrgangsgrenzen und Jahrgangsgruppen-Regel festlegen">Jahrgänge & Gruppen …</button><small>${escapeHtml(gradeLimitSummary(w))}</small></td>
       <td><select data-entity="workshop" data-field="mode">${["Pflicht", "Optional"].map((v) => option(v, w.mode)).join("")}</select></td>
       <td class="row-actions"><button class="icon-button" data-action="duplicate-workshop" title="Weitere Durchführung derselben Kursart">＋</button><button class="icon-button" data-action="delete-workshop" title="Löschen">×</button></td>
     </tr>`).join("");
   $("#workshopsTable").innerHTML = `
-    <thead><tr><th>#</th><th>Durchführungs-ID</th><th>Kursart-ID</th><th>Kursart</th><th>Gruppe</th><th>Klasse von</th><th>Klasse bis</th><th>Bildungsgang</th><th>Kohorte min. (hart, optional)</th><th>Minimum</th><th>Maximum</th><th>Jahrgangs- & Debattierregeln</th><th>Pflicht/Optional</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>Durchführungs-ID</th><th>Kursart-ID</th><th>Kursart</th><th>Gruppe</th><th>Klasse von</th><th>Klasse bis</th><th>Bildungsgang</th><th>Kohorte min. (bestmöglich)</th><th>Minimum</th><th>Maximum</th><th>Jahrgangs- & Gruppenregeln</th><th>Pflicht/Optional</th><th></th></tr></thead>
     <tbody>${rows || `<tr><td colspan="14">Keine Workshops eingetragen.</td></tr>`}</tbody>`;
 }
 
@@ -434,10 +434,10 @@ function statCards(stats) {
     [`${stats.fourth} (${pct(stats.fourth)})`, "Viertwünsche"],
     [stats.maxThirdPerCourse ?? 0, "Max. Drittwünsche / Kurs"],
     [stats.maxFourthPerCourse ?? 0, "Max. Viertwünsche / Kurs"],
-    [stats.unassigned, "Nicht zugeteilt"],
+    [stats.unassigned, "Ohne Workshop-Zuteilung"],
     [stats.largeCourseSpread ?? "–", "Spannweite große Kurse"],
-    [stats.preferredRuleViolations ?? 0, "Weiche Regelhinweise"],
-    [stats.debateGroupImbalance ?? 0, "Differenz Debattiergruppen"],
+    [stats.ruleViolationCount ?? 0, "Regelabweichungen"],
+    [stats.gradeGroupImbalance ?? 0, "Differenz Jahrgangsgruppen"],
     [stats.meanDeviation.toFixed(2), "Ø Zielabweichung"],
     [result?.quality ? `${result.quality.successfulRuns}/${result.quality.runsTried}` : "–", "Qualitätsläufe"],
   ];
@@ -459,8 +459,7 @@ function wishQualityForCourse(courseId) {
 }
 
 function resultRuleBadge(course) {
-  if (course.ruleHardViolations) return `<span class="badge bad">${course.ruleHardViolations} harte Regel(n)</span>`;
-  if (course.rulePreferredViolations) return `<span class="badge warn">${course.rulePreferredViolations} Hinweis(e)</span>`;
+  if (course.ruleDeviations) return `<span class="badge warn">${course.ruleDeviations} Abweichung(en)</span>`;
   return `<span class="badge good">erfüllt</span>`;
 }
 
@@ -552,7 +551,7 @@ function hardViolationsForCourseFromResult(courseId) {
     if (limit.min !== null && count < limit.min) violations.push(`Jahrgang ${limit.grade}: ${count} < Minimum ${limit.min}`);
     if (limit.max !== null && count > limit.max) violations.push(`Jahrgang ${limit.grade}: ${count} > Maximum ${limit.max}`);
   }
-  for (const group of debateGroupSummaryForPeople(course, assigned)) {
+  for (const group of gradeGroupSummaryForPeople(course, assigned)) {
     if (group.remainder !== 0) violations.push(`${group.label}: ${group.count} ist nicht durch 4 teilbar`);
   }
 
@@ -606,13 +605,15 @@ function refreshResultAfterManualChange() {
       .filter((row) => row.workshopId === course.id)
       .map((row) => personMap.get(row.personId))
       .filter(Boolean);
-    course.debateGroupSummary = debateGroupSummaryForPeople(course, assignedPeople);
-    course.debateGroupImbalance = course.debateRule?.enabled && course.debateRule?.balance !== false
-      ? Math.abs((course.debateGroupSummary[0]?.count || 0) - (course.debateGroupSummary[1]?.count || 0))
+    course.gradeGroupSummary = gradeGroupSummaryForPeople(course, assignedPeople);
+    course.gradeGroupImbalance = course.gradeGroupRule?.enabled && course.gradeGroupRule?.balance !== false
+      ? Math.abs((course.gradeGroupSummary[0]?.count || 0) - (course.gradeGroupSummary[1]?.count || 0))
       : 0;
     const hard = hardViolationsForCourseFromResult(course.id);
     course.ruleHardViolations = hard.length;
-    course.ruleStatus = hard.length ? "Regel verletzt" : (course.rulePreferredViolations ? "Hinweis" : "Regeln erfüllt");
+    course.ruleHints = hard;
+    course.ruleDeviations = hard.length + (course.rulePreferredViolations || 0);
+    course.ruleStatus = course.ruleDeviations ? "Bestmögliche Abweichung" : "Regeln erfüllt";
   }
   const counts = new Map();
   result.participantResults.forEach((row) => counts.set(row.type, (counts.get(row.type) || 0) + 1));
@@ -626,7 +627,8 @@ function refreshResultAfterManualChange() {
   const open = result.courseResults.filter((course) => course.open);
   result.stats.meanDeviation = open.length ? open.reduce((sum, course) => sum + Math.abs(course.deviation), 0) / open.length : 0;
   result.stats.hardRuleViolations = result.courseResults.reduce((sum, course) => sum + (course.ruleHardViolations || 0), 0);
-  result.stats.debateGroupImbalance = open.reduce((sum, course) => sum + (course.debateGroupImbalance || 0), 0);
+  result.stats.ruleViolationCount = result.courseResults.reduce((sum, course) => sum + (course.ruleDeviations || 0), 0);
+  result.stats.gradeGroupImbalance = open.reduce((sum, course) => sum + (course.gradeGroupImbalance || 0), 0);
   renderResults();
 }
 
@@ -650,7 +652,7 @@ function moveParticipant(personId, toCourseId) {
   if (hardIssues.length) {
     result = resultUndoStack.pop();
     renderResults();
-    return showDialog("Verschieben verletzt eine harte Regel", hardIssues, "warning");
+    return showDialog("Verschieben verletzt eine vorrangige Regel", hardIssues, "warning");
   }
   renderCourseDetail();
   toast("Person verschoben. Mit ↶ kann die Änderung rückgängig gemacht werden.");
@@ -700,7 +702,7 @@ function applySwap(aId, bId) {
   const issues = [...hardViolationsForCourseFromResult(aCourse), ...hardViolationsForCourseFromResult(bCourse)];
   if (issues.length) {
     result = resultUndoStack.pop(); renderResults();
-    return showDialog("Tausch verletzt eine harte Regel", issues, "warning");
+    return showDialog("Tausch verletzt eine vorrangige Regel", issues, "warning");
   }
   renderCourseDetail(); toast("Tausch durchgeführt.");
 }
@@ -720,16 +722,18 @@ function renderCourseDetail() {
   ].map(([value, label]) => `<div class="stat"><strong>${escapeHtml(value)}</strong><span>${label}</span></div>`).join("");
   const details = course.ruleDetails || [];
   const gradeLimits = course.gradeLimitSummary || [];
-  const gradeLimitLabel = result?.event?.settings?.gradeLimitsRelaxed ? "Jahrgangsziele (bestmöglich):" : "Harte Jahrgangsbelegung:";
+  const gradeLimitLabel = "Jahrgangsvorgaben (bestmöglich):";
   const gradeLimitHtml = gradeLimits.length ? `<div class="grade-limit-result"><strong>${gradeLimitLabel}</strong> ${gradeLimits.map((item) => {
     const bounds = item.min !== null && item.max !== null ? `${item.min}–${item.max}` : item.min !== null ? `mind. ${item.min}` : `max. ${item.max}`;
     return `Jg. ${item.grade}: ${item.count} (${bounds})`;
   }).join(" · ")}</div>` : "";
-  const debateGroups = course.debateGroupSummary || [];
-  const debateHtml = debateGroups.length ? `<div class="grade-limit-result debate-result"><strong>Debattiergruppen (hart):</strong> ${debateGroups.map((item) => `${escapeHtml(item.label)}: ${item.count}${item.remainder === 0 ? " ✓" : " – nicht durch 4 teilbar"}`).join(" · ")}${course.debateRule?.balance ? `<br><span class="muted">Weicher Ausgleich: Differenz ${course.debateGroupImbalance || 0}</span>` : ""}</div>` : "";
-  $("#courseRuleSummary").innerHTML = `${debateHtml}${gradeLimitHtml}${details.length
-    ? `<details><summary>${resultRuleBadge(course)} Weitere Regeldetails anzeigen</summary>${details.map((item) => `<div class="message ${item.mode === "hard" ? "error" : "warning"}">${escapeHtml(ruleTypeName(item.type))}: ${escapeHtml(item.label)} · ${item.count} von mindestens ${item.min}</div>`).join("")}</details>`
-    : `<span class="badge good">Regeln erfüllt</span>`}`;
+  const gradeGroups = course.gradeGroupSummary || [];
+  const gradeGroupHtml = gradeGroups.length ? `<div class="grade-limit-result debate-result"><strong>Jahrgangsgruppen-Regel · Gruppengröße 4 (bestmöglich):</strong> ${gradeGroups.map((item) => `${escapeHtml(item.label)}: ${item.count}${item.remainder === 0 ? " ✓" : " – nicht durch 4 teilbar"}`).join(" · ")}${course.gradeGroupRule?.balance ? `<br><span class="muted">Weicher Ausgleich: Differenz ${course.gradeGroupImbalance || 0}</span>` : ""}</div>` : "";
+  const ruleHints = course.ruleHints || [];
+  const detailsHtml = details.length || ruleHints.length
+    ? `<details><summary>${resultRuleBadge(course)} Regeldetails anzeigen</summary>${ruleHints.map((hint) => `<div class="message warning">${escapeHtml(hint)}</div>`).join("")}${details.map((item) => `<div class="message warning">${escapeHtml(ruleTypeName(item.type))}: ${escapeHtml(item.label)} · ${item.count} von mindestens ${item.min}</div>`).join("")}</details>`
+    : resultRuleBadge(course);
+  $("#courseRuleSummary").innerHTML = `${gradeGroupHtml}${gradeLimitHtml}${detailsHtml}`;
 
   $$(".detail-tab").forEach((button) => button.classList.toggle("active", button.dataset.detailTab === courseDetailTab));
   const assigned = result.participantResults.filter((row) => row.workshopId === course.id).sort((a,b) => a.lastName.localeCompare(b.lastName,"de") || a.firstName.localeCompare(b.firstName,"de"));
@@ -807,7 +811,7 @@ function addWorkshop() {
   state.workshops.push({
     id, offerId, name: "Neuer Workshop", session: "A", gradeFrom: 7, gradeTo: 12,
     schoolForm: "Alle", cohortMin: null, min: 0, max: 12, mode: state.settings.defaultMode, gradeLimits: {},
-    debateRule: { enabled: false, balance: true },
+    gradeGroupRule: { enabled: false, balance: true },
   });
   commit(); renderWorkshops(); renderParticipants(); renderLocks();
 }
@@ -858,7 +862,7 @@ function handleTableClick(event) {
     const copy = {
       ...source,
       gradeLimits: JSON.parse(JSON.stringify(source.gradeLimits || {})),
-      debateRule: JSON.parse(JSON.stringify(source.debateRule || { enabled: false, balance: true })),
+      gradeGroupRule: JSON.parse(JSON.stringify(source.gradeGroupRule || { enabled: false, balance: true })),
       id: nextId("W", new Set(state.workshops.map((w) => w.id))),
       session: nextSessionLabel(source.offerId),
       fixed: undefined,
@@ -959,9 +963,9 @@ function parseExcelWorkbook(workbook) {
       max: Number(getRowValue(row, ["Maximalbelegung", "Maximum", "Max"])) || 0,
       mode: String(getRowValue(row, ["Pflicht/Optional", "Durchführung", "Durchfuehrung"]) || state.settings.defaultMode).trim(),
       gradeLimits: {},
-      debateRule: {
-        enabled: parseYesNo(getRowValue(row, ["Vierergruppen 8/9 + 10+", "Vierergruppen", "Jugend debattiert"]), false),
-        balance: parseYesNo(getRowValue(row, ["Gruppenausgleich", "Wettbewerbsgruppen ausgleichen", "Ausgleich Debattiergruppen"]), true),
+      gradeGroupRule: {
+        enabled: parseYesNo(getRowValue(row, ["Jahrgangsgruppen-Regel 8/9 + 10+", "Jahrgangsgruppen-Regel", "Vierergruppen 8/9 + 10+", "Vierergruppen", "Jugend debattiert"]), false),
+        balance: parseYesNo(getRowValue(row, ["Gruppenausgleich", "Jahrgangsgruppen ausgleichen", "Wettbewerbsgruppen ausgleichen", "Ausgleich Debattiergruppen"]), true),
       },
     };
   }).filter((row) => row.id);
@@ -1035,12 +1039,12 @@ async function exportExcel() {
   addTableSheet("Workshops", [
     ["Durchführungs-ID", "id"], ["Kursart-ID", "offerId"], ["Kursart", "name"], ["Gruppe", "session"],
     ["Klasse von", "gradeFrom"], ["Klasse bis", "gradeTo"], ["Bildungsgang", "schoolForm"], ["Kohortenminimum", "cohortMin"],
-    ["Mindestbelegung", "min"], ["Maximalbelegung", "max"], ["Vierergruppen 8/9 + 10+", "debateEnabled"],
-    ["Gruppenausgleich", "debateBalance"], ["Pflicht/Optional", "mode"],
+    ["Mindestbelegung", "min"], ["Maximalbelegung", "max"], ["Jahrgangsgruppen-Regel 8/9 + 10+", "gradeGroupEnabled"],
+    ["Gruppenausgleich", "gradeGroupBalance"], ["Pflicht/Optional", "mode"],
   ], state.workshops.map((workshop) => ({
     ...workshop,
-    debateEnabled: workshop.debateRule?.enabled ? "Ja" : "Nein",
-    debateBalance: workshop.debateRule?.balance !== false ? "Ja" : "Nein",
+    gradeGroupEnabled: workshop.gradeGroupRule?.enabled ? "Ja" : "Nein",
+    gradeGroupBalance: workshop.gradeGroupRule?.balance !== false ? "Ja" : "Nein",
   })));
   addTableSheet("Jahrgangsbelegung", [
     ["Durchführungs-ID", "workshopId"], ["Jahrgang", "grade"], ["Minimum", "min"], ["Maximum", "max"],
@@ -1052,11 +1056,12 @@ async function exportExcel() {
   addTableSheet("Sperrungen", [["Person-ID", "personId"], ["Durchführungs-ID", "workshopId"], ["Grund / Hinweis", "reason"]], state.locks);
   if (result?.ok) {
     addTableSheet("Ergebnis", [["Nachname", "lastName"], ["Vorname", "firstName"], ["Klasse", "className"], ["Workshop", "workshopName"], ["Zuteilungsart", "type"], ["Hinweis", "note"]], result.participantResults);
-    addTableSheet("Kursübersicht", [["Kursart", "name"], ["Gruppe", "session"], ["Pflicht/Optional", "mode"], ["Kohortenminimum", "cohortMinEffective"], ["Minimum", "effectiveMin"], ["Ziel", "target"], ["Belegung", "load"], ["Maximum", "max"], ["Abweichung", "deviation"], ["Sek I (8–9)", "debateSekI"], ["Sek II (10+)", "debateSekII"], ["Gruppendifferenz", "debateImbalance"], ["Status", "status"]], result.courseResults.map((course) => ({
+    addTableSheet("Kursübersicht", [["Kursart", "name"], ["Gruppe", "session"], ["Pflicht/Optional", "mode"], ["Kohortenminimum", "cohortMinEffective"], ["Minimum", "effectiveMin"], ["Ziel", "target"], ["Belegung", "load"], ["Maximum", "max"], ["Abweichung", "deviation"], ["Jahrgangsgruppe 8–9", "gradeGroupSekI"], ["Jahrgangsgruppe 10+", "gradeGroupSekII"], ["Gruppendifferenz", "gradeGroupImbalanceExport"], ["Regelhinweise", "ruleHintsExport"], ["Status", "status"]], result.courseResults.map((course) => ({
       ...course,
-      debateSekI: course.debateGroupSummary?.find((item) => item.key === "sekI")?.count ?? "",
-      debateSekII: course.debateGroupSummary?.find((item) => item.key === "sekII")?.count ?? "",
-      debateImbalance: course.debateRule?.enabled && course.debateRule?.balance !== false ? course.debateGroupImbalance : "",
+      gradeGroupSekI: course.gradeGroupSummary?.find((item) => item.key === "sekI")?.count ?? "",
+      gradeGroupSekII: course.gradeGroupSummary?.find((item) => item.key === "sekII")?.count ?? "",
+      gradeGroupImbalanceExport: course.gradeGroupRule?.enabled && course.gradeGroupRule?.balance !== false ? course.gradeGroupImbalance : "",
+      ruleHintsExport: (course.ruleHints || []).join("; "),
     })));
   }
   const buffer = await workbook.xlsx.writeBuffer();
@@ -1222,14 +1227,14 @@ async function downloadCourseChoiceTemplate() {
   guide.addRow(["Workshop-Zuteilung – vollständige Importvorlage"]);
   guide.addRow([]);
   guide.addRow(["Blatt", "Verwendung"]);
-  guide.addRow(["Workshops", "Kurse und Durchführungen einschließlich Klassenbereich, Bildungsgang, Kohortenminimum, Mindest-/Maximalbelegung und optionaler Debattierregel pflegen. Beim Import ersetzen diese Angaben die Workshops im aktuellen Projekt."]);
-  guide.addRow(["Jahrgangsbelegung", "Optionale harte Mindest- und Höchstzahlen je Jahrgang und Durchführung. Leere Felder bedeuten keine Vorgabe."]);
+  guide.addRow(["Workshops", "Kurse und Durchführungen einschließlich Klassenbereich, Bildungsgang, Kohortenminimum, Mindest-/Maximalbelegung und optionaler Jahrgangsgruppen-Regel pflegen. Beim Import ersetzen diese Angaben die Workshops im aktuellen Projekt."]);
+  guide.addRow(["Jahrgangsbelegung", "Optionale Mindest- und Höchstzahlen je Jahrgang und Durchführung. Sie werden bestmöglich erfüllt; leere Felder bedeuten keine Vorgabe."]);
   guide.addRow(["Kursanwahl", "Teilnehmerdaten und vier Wünsche erfassen. Die Wünsche beziehen sich auf die Kursart-ID; die feste Setzung auf die konkrete Durchführungs-ID."]);
   guide.addRow(["Sperrungen", "Unerlaubte Kombinationen aus Person-ID und Durchführungs-ID eintragen. Ein vorhandenes Blatt Sperrungen ersetzt beim Import die Sperrungen des aktuellen Projekts."]);
   guide.addRow([]);
-  guide.addRow(["Kohortenminimum", "Leer = globaler Wert der Anwendung, 0 = aus, ab 2 = eigener harter Wert für diese Durchführung."]);
+  guide.addRow(["Kohortenminimum", "Leer = globaler Wert der Anwendung, 0 = aus, ab 2 = eigener vorrangiger Zielwert für diese Durchführung."]);
   guide.addRow(["Jahrgangsbelegung", "Beispiel: Jahrgang 8 Minimum 7 = mindestens 7 Achtklässler müssen in diesem Kurs sein. Nur Maximum 4 = höchstens 4. Leer = keine Vorgabe."]);
-  guide.addRow(["Vierergruppen 8/9 + 10+", "Ja = Jahrgänge 8+9 sowie Jahrgang 10 aufwärts müssen jeweils mit einer durch 4 teilbaren Schülerzahl vertreten sein. Gruppenausgleich Ja = beide Wettbewerbsgruppen sollen zusätzlich möglichst gleich groß sein (weich)."]);
+  guide.addRow(["Jahrgangsgruppen-Regel 8/9 + 10+", "Ja = Jahrgänge 8+9 sowie Jahrgang 10 aufwärts sollen jeweils mit einer durch 4 teilbaren Schülerzahl vertreten sein. Ist das nicht vollständig möglich, wird trotzdem zugeteilt und die kleinste Abweichung angezeigt. Gruppenausgleich Ja = beide Jahrgangsgruppen sollen zusätzlich möglichst gleich groß sein."]);
   guide.addRow(["Hinweis", "Die Vorlage enthält die aktuell im Projekt eingetragenen Workshops, Jahrgangsvorgaben und Sperrungen. Änderungen können direkt in Excel vorgenommen und anschließend wieder importiert werden."]);
   guide.getColumn(1).width = 24;
   guide.getColumn(2).width = 110;
@@ -1249,8 +1254,8 @@ async function downloadCourseChoiceTemplate() {
     { header: "Kohortenminimum", key: "cohortMin", width: 18 },
     { header: "Mindestbelegung", key: "min", width: 18 },
     { header: "Maximalbelegung", key: "max", width: 18 },
-    { header: "Vierergruppen 8/9 + 10+", key: "debateEnabled", width: 25 },
-    { header: "Gruppenausgleich", key: "debateBalance", width: 20 },
+    { header: "Jahrgangsgruppen-Regel 8/9 + 10+", key: "gradeGroupEnabled", width: 34 },
+    { header: "Gruppenausgleich", key: "gradeGroupBalance", width: 20 },
     { header: "Pflicht/Optional", key: "mode", width: 18 },
   ];
   workshops.addRows(state.workshops.map((w) => ({
@@ -1264,8 +1269,8 @@ async function downloadCourseChoiceTemplate() {
     cohortMin: w.cohortMin ?? "",
     min: w.min ?? 0,
     max: w.max ?? 0,
-    debateEnabled: w.debateRule?.enabled ? "Ja" : "Nein",
-    debateBalance: w.debateRule?.balance !== false ? "Ja" : "Nein",
+    gradeGroupEnabled: w.gradeGroupRule?.enabled ? "Ja" : "Nein",
+    gradeGroupBalance: w.gradeGroupRule?.balance !== false ? "Ja" : "Nein",
     mode: w.mode || state.settings.defaultMode,
   })));
   while (workshops.rowCount < 31) workshops.addRow({});

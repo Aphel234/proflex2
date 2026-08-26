@@ -4,23 +4,23 @@ Statische Browseranwendung für bis zu **500 Teilnehmer und 30 Durchführungen**
 
 ## Neu in dieser Version
 
-### Globale Jahrgangssuche und Bestmöglich-Fallback (Version 9.4)
+### Vollständige Bestmöglich-Zuteilung (Version 9.5)
 
-Jahrgangs-Minima und -Maxima werden zunächst als harte Vorgaben behandelt. Reichen einzelne Verschiebungen und direkte Tauschaktionen nicht aus, berechnet der Optimierer die Belegung aller Kurse global neu. Dadurch werden auch Verschiebungsketten über drei oder mehr Kurse gefunden.
+Der Optimierer bevorzugt jetzt zuerst die Lösung mit den wenigsten unzugeteilten Schülern. Danach werden die Anzahl und die Stärke unvermeidbarer Regelabweichungen, anschließend Wünsche und Kursausgleich bewertet.
 
-Nur wenn keine exakte Jahrgangsverteilung existiert, wird automatisch die Lösung mit der kleinsten Gesamtabweichung ausgegeben. Die Anwendung bricht dann nicht ab, sondern zeigt einen gelben Hinweis mit Kurs, Jahrgang, Ist-Wert und Zielgrenze. Kapazitäten, Sperrungen, feste Setzungen und andere harte Regeln bleiben verbindlich.
+Jahrgangs-Minima/-Maxima, Kohorten- und Gruppenregeln werden zunächst durch Verschieben, Tauschen und eine globale Kurssuche zu erfüllen versucht. Ist das nicht vollständig möglich, bleibt die bestmögliche zulässige Zuteilung erhalten. Das Programm nennt Kurs, Ist-Wert und Zielwert sowohl im Ergebnis als auch im Hinweisfeld der betroffenen Schüler. Verbindlich bleiben Kurskapazitäten, Kurszugang, Sperrungen, feste Setzungen sowie die gesamte Mindest-/Maximalbelegung.
 
-### Vierergruppen für Jugend debattiert (Version 2.4)
+### Jahrgangsgruppen-Regel
 
-Pro Durchführung kann unter **Workshops → „Jahrgänge & Debatte …“** die Variante A aktiviert werden:
+Pro Durchführung kann unter **Workshops → „Jahrgänge & Gruppen …“** die aktuelle Jahrgangsgruppen-Regel aktiviert werden:
 
 - Jahrgänge **8+9 zusammen** müssen mit einer durch 4 teilbaren Schülerzahl vertreten sein.
 - Jahrgang **10 aufwärts zusammen** muss ebenfalls durch 4 teilbar sein.
-- Ein optionaler weicher Ausgleich bevorzugt möglichst ähnlich große Wettbewerbsgruppen, ohne Wünsche oder harte Regeln zu verdrängen.
+- Ein optionaler weicher Ausgleich bevorzugt möglichst ähnlich große Jahrgangsgruppen.
 
-Die Viererteilbarkeit ist eine **harte Regel**. Der Optimierer darf Personen zwischen zulässigen Kursen verschieben oder tauschen, gibt aber keine regelwidrige Lösung aus. Ist die Vorgabe wegen Kapazitäten, festen Setzungen, Sperrungen oder anderer harter Regeln unmöglich, erscheint eine konkrete Fehlermeldung.
+Die Regel wird vorrangig und bestmöglich eingehalten. Ist die Viererteilbarkeit wegen Kapazitäten, festen Setzungen, Sperrungen oder anderer Vorgaben unmöglich, werden die Schüler trotzdem zugeteilt und die kleinste Abweichung konkret ausgewiesen.
 
-Die dynamische Excel-Vorlage sowie Excel-Import/-Export enthalten dafür in `Workshops` die Spalten **`Vierergruppen 8/9 + 10+`** und **`Gruppenausgleich`** mit `Ja`/`Nein`. Alte Projekte und Excel-Dateien bleiben kompatibel; die neue Regel ist dort standardmäßig ausgeschaltet.
+Die dynamische Excel-Vorlage sowie Excel-Import/-Export enthalten dafür in `Workshops` die Spalten **`Jahrgangsgruppen-Regel 8/9 + 10+`** und **`Gruppenausgleich`** mit `Ja`/`Nein`. Die alten Überschriften und das alte JSON-Feld `debateRule` werden beim Import weiterhin erkannt.
 
 ### Kursart und Durchführung sind getrennt
 
@@ -50,7 +50,7 @@ Jede Durchführung kann den globalen Wert überschreiben:
 - `0` = Regel für diese Durchführung ausschalten
 - `2`, `3`, `4` … = eigener Wert
 
-Wenn die Regel mit Wünschen, Kapazitäten, festen Setzungen und Sperrungen nicht erfüllt werden kann, erzeugt die Anwendung keine stillschweigend falsche Lösung, sondern eine verständliche Fehlermeldung.
+Wenn die Regel mit Wünschen, Kapazitäten, festen Setzungen und Sperrungen nicht vollständig erfüllt werden kann, bleibt die bestmögliche Zuteilung erhalten und wird verständlich gekennzeichnet.
 
 ## Weitere Funktionen
 
@@ -89,7 +89,6 @@ GitHub Pages veröffentlicht nur den Programmcode. Teilnehmerdaten werden im Bro
 3. Unter **Settings → Pages → Source** `Deploy from a branch` auswählen.
 4. Als Branch `main` und als Ordner `/docs` einstellen und speichern.
 5. GitHub Pages veröffentlicht den bereits gebauten Ordner `docs` direkt.
-5. Unter **Actions** auf den grünen Abschluss warten.
 
 Es ist auf GitHub keine `npm`-Installation notwendig.
 
@@ -104,7 +103,7 @@ Die Tests decken u. a. ab:
 - Kohortenminimum,
 - nicht erfüllbare Kohortenregeln,
 - Pflicht- und optionale Durchführungen,
-- erfüllbare und nicht erfüllbare Vierergruppenregeln,
+- erfüllbare und nicht erfüllbare Jahrgangsgruppen-Regeln,
 - Rückwärtskompatibilität alter Projekte.
 
 ## Lizenz
@@ -119,18 +118,18 @@ Unter **Übersicht → Einstellungen** kann zwischen drei Qualitätsstufen gewä
 - **Standard** – 6 unterschiedliche Startvarianten; empfohlen
 - **Gründlich** – 24 unterschiedliche Startvarianten
 
-Die Anwendung behält automatisch die beste gültige Verteilung. Harte Regeln sowie Mindest- und Maximalbelegungen werden in jeder Variante zwingend eingehalten.
+Die Anwendung behält automatisch die beste Verteilung: zuerst möglichst vollständig, dann mit möglichst wenigen und kleinen Regelabweichungen. Mindest- und Maximalbelegungen der Kurse bleiben in jeder Variante verbindlich.
 
-## Harte Regeln (Version 2.2)
+## Vorrangige Regeln
 
-Als **Hart** markierte Zuteilungsregeln werden vor Wunschqualität und Belastungsausgleich behandelt. Die Optimierung versucht kleine Regelgruppen aktiv zu verstärken oder vollständig umzuverteilen. Eine wirklich nicht erfüllbare harte Regel führt zu einer verständlichen Fehlermeldung und wird nicht automatisch ignoriert.
+Als **Vorrangig** markierte Zuteilungsregeln werden vor Wunschqualität und Belastungsausgleich behandelt. Die Optimierung versucht kleine Regelgruppen aktiv zu verstärken oder vollständig umzuverteilen. Eine nicht vollständig erfüllbare Regel führt zu einer gekennzeichneten Bestmöglich-Zuteilung und nicht zum Verlust ansonsten zulässiger Workshopplätze.
 
 ## Mehrfach-Umfrageimport
 Unter **Daten → Umfrage-Dateien importieren** können mehrere Excel-Umfrageexporte gemeinsam eingelesen werden. Die App gleicht Workshopkennungen und Namen mit den Kursarten im aktuellen Projekt ab, zeigt unsichere Treffer zur Prüfung und erkennt mögliche Dubletten über Vorname + Nachname + Klasse. Person-IDs werden automatisch vergeben.
 
 ## Jahrgangsbelegung pro Kurs (seit Version 2.3, globale Suche ab 9.4)
 
-In **Workshops** gibt es pro Durchführung den Knopf **„Jahrgänge & Debatte …“**. Dort können für jeden zugelassenen Jahrgang getrennte harte Mindest- und Höchstzahlen festgelegt werden.
+In **Workshops** gibt es pro Durchführung den Knopf **„Jahrgänge & Gruppen …“**. Dort können für jeden zugelassenen Jahrgang getrennte Mindest- und Höchstziele festgelegt werden.
 
 - Minimum leer = keine Mindestvorgabe
 - Maximum leer = keine Höchstvorgabe
@@ -138,6 +137,6 @@ In **Workshops** gibt es pro Durchführung den Knopf **„Jahrgänge & Debatte �
 - Minimum leer, Maximum `4` = höchstens 4 Schüler dieses Jahrgangs dürfen in diesen Kurs
 - Minimum `2`, Maximum `5` = zwischen 2 und 5 Schüler dieses Jahrgangs
 
-Diese Grenzen werden zuerst **hart** gesucht und gelten zusätzlich zur gesamten Mindest-/Maximalbelegung, zu Sperrungen, festen Setzungen und anderen Regeln. Ist keine exakte Jahrgangsverteilung möglich, wird die Berechnung ab Version 9.4 nicht mehr abgebrochen: Das Programm liefert die Lösung mit der kleinsten Abweichung und kennzeichnet sie deutlich als Hinweis.
+Diese Grenzen werden zuerst **vorrangig** gesucht und gelten zusätzlich zur gesamten Mindest-/Maximalbelegung, zu Sperrungen, festen Setzungen und anderen Regeln. Ist keine exakte Jahrgangsverteilung möglich, wird die Berechnung nicht abgebrochen: Das Programm liefert die Lösung mit der kleinsten Abweichung und kennzeichnet sie deutlich als Hinweis.
 
 Die Excel-Vorlage sowie Excel-Import/-Export unterstützen dafür das Blatt **`Jahrgangsbelegung`** mit den Spalten `Durchführungs-ID | Jahrgang | Minimum | Maximum`.

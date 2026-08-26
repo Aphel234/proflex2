@@ -1,7 +1,7 @@
 const MODES = new Set(["Pflicht", "Optional"]);
 const FORMS = new Set(["Alle", "Regional", "Gymnasial"]);
-const DEBATE_GROUP_SIZE = 4;
-const DEBATE_GROUPS = Object.freeze([
+const GRADE_GROUP_SIZE = 4;
+const GRADE_GROUPS = Object.freeze([
   { key: "sekI", label: "Sek I (Jahrgänge 8–9)", gradeFrom: 8, gradeTo: 9 },
   { key: "sekII", label: "Sek II (Jahrgang 10 aufwärts)", gradeFrom: 10, gradeTo: 20 },
 ]);
@@ -32,7 +32,7 @@ function normalizeGradeLimits(raw) {
   return result;
 }
 
-function normalizeDebateRule(raw) {
+function normalizeGradeGroupRule(raw) {
   if (raw === true) return { enabled: true, balance: true };
   return {
     enabled: raw?.enabled === true,
@@ -40,48 +40,48 @@ function normalizeDebateRule(raw) {
   };
 }
 
-function debateGroupForGrade(grade) {
-  return DEBATE_GROUPS.find((group) => grade >= group.gradeFrom && grade <= group.gradeTo) || null;
+function gradeGroupForGrade(grade) {
+  return GRADE_GROUPS.find((group) => grade >= group.gradeFrom && grade <= group.gradeTo) || null;
 }
 
-function debateGroupCountsForPeople(people) {
-  const counts = new Map(DEBATE_GROUPS.map((group) => [group.key, 0]));
+function gradeGroupCountsForPeople(people) {
+  const counts = new Map(GRADE_GROUPS.map((group) => [group.key, 0]));
   for (const person of people || []) {
-    const group = debateGroupForGrade(parseGrade(person.className));
+    const group = gradeGroupForGrade(parseGrade(person.className));
     if (group) counts.set(group.key, (counts.get(group.key) || 0) + 1);
   }
   return counts;
 }
 
-function debateGroupSummaryForPeople(course, people) {
-  if (!course?.debateRule?.enabled) return [];
-  const counts = debateGroupCountsForPeople(people);
-  return DEBATE_GROUPS.map((group) => {
+function gradeGroupSummaryForPeople(course, people) {
+  if (!course?.gradeGroupRule?.enabled) return [];
+  const counts = gradeGroupCountsForPeople(people);
+  return GRADE_GROUPS.map((group) => {
     const count = counts.get(group.key) || 0;
     return {
       key: group.key,
       label: group.label,
       count,
-      groupSize: DEBATE_GROUP_SIZE,
-      remainder: count % DEBATE_GROUP_SIZE,
+      groupSize: GRADE_GROUP_SIZE,
+      remainder: count % GRADE_GROUP_SIZE,
     };
   });
 }
 
-function debateGroupViolationsForPeople(course, people) {
-  return debateGroupSummaryForPeople(course, people)
+function gradeGroupViolationsForPeople(course, people) {
+  return gradeGroupSummaryForPeople(course, people)
     .filter((item) => item.remainder !== 0)
     .map((item) => ({
       kind: "debateModulo",
       course,
       ...item,
-      distance: Math.min(item.remainder, DEBATE_GROUP_SIZE - item.remainder),
+      distance: Math.min(item.remainder, GRADE_GROUP_SIZE - item.remainder),
     }));
 }
 
-function debateGroupImbalanceForPeople(course, people) {
-  if (!course?.debateRule?.enabled || !course.debateRule.balance) return 0;
-  const summary = debateGroupSummaryForPeople(course, people);
+function gradeGroupImbalanceForPeople(course, people) {
+  if (!course?.gradeGroupRule?.enabled || !course.gradeGroupRule.balance) return 0;
+  const summary = gradeGroupSummaryForPeople(course, people);
   return summary.length === 2 ? Math.abs(summary[0].count - summary[1].count) : 0;
 }
 
@@ -157,7 +157,9 @@ export function normalizeEvent(input) {
           ? null
           : Math.max(0, Math.min(20, Number(rawCohortMin) || 0)),
         gradeLimits: normalizeGradeLimits(w.gradeLimits),
-        debateRule: normalizeDebateRule(w.debateRule),
+        // Neue Projekte verwenden den neutralen Namen. Das alte Feld bleibt beim
+        // Import als Alias erhalten, damit vorhandene JSON-Projekte weiterlaufen.
+        gradeGroupRule: normalizeGradeGroupRule(w.gradeGroupRule ?? w.debateRule),
         _gradeLimitsRelaxed: settings.gradeLimitsRelaxed === true,
       };
     }),
@@ -319,7 +321,7 @@ export function validateEvent(raw) {
         errors.push(`${course.id}: Jahrgang ${limit.grade}: Minimum ${limit.min} ist größer als die gesamte Maximalbelegung ${course.max}.`);
       }
       if (limit.grade < course.gradeFrom || limit.grade > course.gradeTo) {
-        if ((limit.min ?? 0) > 0) errors.push(`${course.id}: Jahrgang ${limit.grade} hat ein Minimum, liegt aber außerhalb des zugelassenen Klassenbereichs ${course.gradeFrom}–${course.gradeTo}.`);
+        if ((limit.min ?? 0) > 0) warnings.push(`${course.id}: Jahrgang ${limit.grade} hat ein Minimum, liegt aber außerhalb des zugelassenen Klassenbereichs ${course.gradeFrom}–${course.gradeTo}. Diese Vorgabe wird bei Bedarf als Regelabweichung behandelt.`);
         else warnings.push(`${course.id}: Jahrgang ${limit.grade} liegt außerhalb des zugelassenen Klassenbereichs; die Jahrgangsgrenze hat daher keine Wirkung.`);
       }
     }
@@ -330,20 +332,20 @@ export function validateEvent(raw) {
     if (!event.settings.gradeLimitsRelaxed && effectiveMinimum(course) > course.max) {
       errors.push(`${course.id}: Die harten Mindestvorgaben ergeben mindestens ${effectiveMinimum(course)} Plätze, die Maximalbelegung ist aber nur ${course.max}.`);
     }
-    if (course.debateRule.enabled) {
+    if (course.gradeGroupRule.enabled) {
       if (course.gradeTo < 8) {
-        warnings.push(`${course.id}: Die Vierergruppenregel hat keine Wirkung, weil der Kurs nur Jahrgänge unter 8 zulässt.`);
+        warnings.push(`${course.id}: Die Jahrgangsgruppen-Regel hat keine Wirkung, weil der Kurs nur Jahrgänge unter 8 zulässt.`);
       }
       const overlapsSekI = course.gradeFrom <= 9 && course.gradeTo >= 8;
       const overlapsSekII = course.gradeTo >= 10;
-      if (course.debateRule.balance && !(overlapsSekI && overlapsSekII)) {
-        warnings.push(`${course.id}: Der weiche Ausgleich der Wettbewerbsgruppen wirkt nur sinnvoll, wenn Jahrgänge 8–9 und 10 aufwärts zugelassen sind.`);
+      if (course.gradeGroupRule.balance && !(overlapsSekI && overlapsSekII)) {
+        warnings.push(`${course.id}: Der weiche Ausgleich der Jahrgangsgruppen wirkt nur sinnvoll, wenn Jahrgänge 8–9 und 10 aufwärts zugelassen sind.`);
       }
       if (course.mode === "Pflicht" && course.gradeFrom >= 8) {
         const minimum = effectiveMinimum(course);
-        const firstAllowedTotal = Math.ceil(minimum / DEBATE_GROUP_SIZE) * DEBATE_GROUP_SIZE;
+        const firstAllowedTotal = Math.ceil(minimum / GRADE_GROUP_SIZE) * GRADE_GROUP_SIZE;
         if (firstAllowedTotal > course.max) {
-          errors.push(`${course.id}: Zwischen Mindestbelegung ${minimum} und Maximum ${course.max} liegt keine durch ${DEBATE_GROUP_SIZE} teilbare Gesamtbelegung. Das ist nötig, weil alle zugelassenen Jahrgänge zu den beiden Debattiergruppen gehören.`);
+          warnings.push(`${course.id}: Zwischen Mindestbelegung ${minimum} und Maximum ${course.max} liegt keine durch ${GRADE_GROUP_SIZE} teilbare Gesamtbelegung. Die Jahrgangsgruppen-Regel wird deshalb bestmöglich angenähert.`);
         }
       }
     }
@@ -864,6 +866,7 @@ function rebuildWithGlobalGradeSearch(event, openSet, lockSet, courseMap, assign
   const flow = new MinCostMaxFlow(superSink + 1);
   const balance = Array(superSink + 1).fill(0);
   const assignmentEdges = [];
+  const initialUnassigned = event.participants.reduce((sum, person) => sum + (assignments.get(person.id) ? 0 : 1), 0);
   let invalidBounds = false;
   const softGradeBaseline = 10_000_000_000;
   const softGradeViolation = 1_000_000_000_000;
@@ -933,9 +936,15 @@ function rebuildWithGlobalGradeSearch(event, openSet, lockSet, courseMap, assign
   });
 
   courses.forEach((course, index) => {
-    addBoundedEdge(courseStart + index, sink, effectiveMinimum(course), course.max, 0);
+    const minimum = relaxed
+      ? Math.max(course.min, course.mode === "Pflicht" ? 1 : 0)
+      : effectiveMinimum(course);
+    addBoundedEdge(courseStart + index, sink, minimum, course.max, 0);
   });
-  addBoundedEdge(unassignedNode, sink, 0, event.participants.length, 0);
+  // Eine Jahrgangsregel darf die Zahl der Nichtzugeteilten niemals erhöhen.
+  // Innerhalb dieser Obergrenze darf die globale Suche Personen austauschen und
+  // bereits unzugeteilte Schüler nach Möglichkeit sogar noch unterbringen.
+  addBoundedEdge(unassignedNode, sink, 0, initialUnassigned, 0);
   addBoundedEdge(sink, source, event.participants.length, event.participants.length, 0);
   if (invalidBounds) return false;
 
@@ -1049,7 +1058,7 @@ function repairCohortMinimums(event, openSet, lockSet, courseMap, assignments, l
 
   for (let pass = 0; pass < maxPasses; pass += 1) {
     const { violations, counts } = findCohortViolations(event, openSet, courseMap, assignments);
-    if (!violations.length) return;
+    if (!violations.length) return [];
 
     violations.sort((a, b) => (a.min - a.count) - (b.min - b.count) || a.course.id.localeCompare(b.course.id, "de"));
     let repairedSomething = false;
@@ -1126,16 +1135,14 @@ function repairCohortMinimums(event, openSet, lockSet, courseMap, assignments, l
     }
 
     if (!repairedSomething) {
-      const first = violations[0];
-      throw new Error(`${first.course.name}${first.course.session ? ` – Gruppe ${first.course.session}` : ""}: ${cohortLabelFromKey(first.cohortKey)} ist nur mit ${first.count} Person(en) vertreten; erforderlich sind mindestens ${first.min}. Die Kohortenregel kann mit den aktuellen Wünschen, Kapazitäten und Sperrungen nicht erfüllt werden.`);
+      // Eine Kohortenregel darf keine ansonsten mögliche Zuteilung verhindern.
+      // Die verbleibende Abweichung wird später kurs- und personenbezogen erklärt.
+      return violations;
     }
   }
 
   const remaining = findCohortViolations(event, openSet, courseMap, assignments).violations;
-  if (remaining.length) {
-    const first = remaining[0];
-    throw new Error(`${first.course.name}: Kohortenregel für ${cohortLabelFromKey(first.cohortKey)} konnte nicht stabil erfüllt werden.`);
-  }
+  return remaining;
 }
 
 function cohortSummaryForCourse(event, course, assignments, personMap) {
@@ -1394,22 +1401,10 @@ function repairCourseGradeLimits(event, openSet, lockSet, courseMap, assignments
           break;
         }
 
-        // Erst wenn weder Verschieben noch Tauschen möglich ist, darf eine Person
-        // unzugeteilt bleiben. Dadurch wird eine vollständige Lösung nicht vorschnell
-        // zugunsten einer technisch einfacheren Reparatur aufgegeben.
-        const unassignment = violation.members
-          .filter((person) => !person.fixed)
-          .filter((person) => {
-            const after = targetPeople.filter((item) => item.id !== person.id);
-            return after.length >= effectiveMinimum(target)
-              && hardRuleStateImproves(hardRuleStateForCourse(event, target, targetPeople), hardRuleStateForCourse(event, target, after));
-          })
-          .sort((a, b) => preferenceCost(b, target) - preferenceCost(a, target) || a.id.localeCompare(b.id, "de"))[0];
-        if (!unassignment) continue;
-        assignments.set(unassignment.id, "");
-        loads.set(target.id, (loads.get(target.id) || 0) - 1);
-        changed = true;
-        break;
+        // Eine Jahrgangsgrenze darf keinen Schüler aus einer ansonsten zulässigen
+        // Zuteilung herausdrängen. Wenn weder Verschieben noch Tauschen gelingt,
+        // übernimmt die globale Suche unten die bestmögliche Annäherung.
+        continue;
       }
     }
 
@@ -1732,17 +1727,13 @@ function repairFlexibleRules(event, openSet, lockSet, courseMap, assignments, lo
     }
 
     if (!changed) {
-      if (mode === "preferred") return violations;
-      const first = violations[0];
-      throw new Error(`${first.course.name}${first.course.session ? ` – Gruppe ${first.course.session}` : ""}: harte Regel „${ruleTypeLabel(first.rule.type)} – mindestens ${first.min}“ kann für ${first.label} nicht erfüllt werden. Die Optimierung hat Verstärken, Umverteilen und vollständiges Entfernen dieser Gruppe geprüft.`);
+      // Auch eine als verbindlich markierte Zusammensetzungsregel darf nicht dazu
+      // führen, dass eine ansonsten mögliche Gesamtlösung verworfen wird.
+      return violations;
     }
   }
 
   const remaining = flexibleRuleViolations(event, openSet, courseMap, assignments, mode);
-  if (mode === "hard" && remaining.length) {
-    const first = remaining[0];
-    throw new Error(`${first.course.name}: harte Regel „${ruleTypeLabel(first.rule.type)} – mindestens ${first.min}“ konnte nach mehreren Reparaturschritten nicht vollständig erfüllt werden.`);
-  }
   return remaining;
 }
 
@@ -1752,7 +1743,7 @@ function summarizeFlexibleRules(event, openSet, courseMap, assignments) {
   return { hard, preferred };
 }
 
-function nonDebateHardValidForCourse(event, course, people) {
+function nonGradeGroupHardValidForCourse(event, course, people) {
   if (!course) return true;
   if (people.length < effectiveMinimum(course) || people.length > course.max) return false;
   if (!event.settings.gradeLimitsRelaxed && gradeLimitViolationsForPeople(course, people).length) return false;
@@ -1763,21 +1754,22 @@ function nonDebateHardValidForCourse(event, course, people) {
   return true;
 }
 
-function debateAssignmentState(event, openSet, courseMap, assignments) {
+function gradeGroupAssignmentState(event, openSet, courseMap, assignments) {
   const byCourse = peopleByCourse(event, assignments);
   const violations = [];
   let distance = 0;
   let imbalance = 0;
   for (const courseId of openSet) {
     const course = courseMap.get(courseId);
-    if (!course?.debateRule?.enabled) continue;
+    if (!course?.gradeGroupRule?.enabled) continue;
     const people = byCourse.get(courseId) || [];
-    const courseViolations = debateGroupViolationsForPeople(course, people);
+    const courseViolations = gradeGroupViolationsForPeople(course, people);
     violations.push(...courseViolations);
     distance += courseViolations.reduce((sum, item) => sum + item.distance, 0);
-    imbalance += debateGroupImbalanceForPeople(course, people);
+    imbalance += gradeGroupImbalanceForPeople(course, people);
   }
-  return { byCourse, violations, distance, imbalance };
+  const unassigned = event.participants.reduce((sum, person) => sum + (assignments.get(person.id) ? 0 : 1), 0);
+  return { byCourse, violations, distance, imbalance, unassigned };
 }
 
 function assignmentPreferenceCost(person, courseId, courseMap) {
@@ -1786,11 +1778,11 @@ function assignmentPreferenceCost(person, courseId, courseMap) {
   return course ? preferenceCost(person, course) : PREFERENCE_COST.unassigned;
 }
 
-function debateAssignmentHash(event, assignments) {
+function gradeGroupAssignmentHash(event, assignments) {
   return event.participants.map((person) => assignments.get(person.id) || "").join("\u0002");
 }
 
-function debateCandidateState(event, openSet, courseMap, baseState, changes, preferenceDelta) {
+function gradeGroupCandidateState(event, openSet, courseMap, baseState, changes, preferenceDelta) {
   const nextAssignments = new Map(baseState.assignments);
   const affected = new Set();
   for (const { person, toId } of changes) {
@@ -1800,10 +1792,10 @@ function debateCandidateState(event, openSet, courseMap, baseState, changes, pre
     nextAssignments.set(person.id, toId);
   }
 
-  const nextAnalysis = debateAssignmentState(event, openSet, courseMap, nextAssignments);
+  const nextAnalysis = gradeGroupAssignmentState(event, openSet, courseMap, nextAssignments);
   for (const courseId of affected) {
     const course = courseMap.get(courseId);
-    if (!nonDebateHardValidForCourse(event, course, nextAnalysis.byCourse.get(courseId) || [])) return null;
+    if (!nonGradeGroupHardValidForCourse(event, course, nextAnalysis.byCourse.get(courseId) || [])) return null;
   }
 
   return {
@@ -1813,11 +1805,11 @@ function debateCandidateState(event, openSet, courseMap, baseState, changes, pre
   };
 }
 
-function debateMoveDelta(person, fromId, toId, courseMap) {
+function gradeGroupMoveDelta(person, fromId, toId, courseMap) {
   return assignmentPreferenceCost(person, toId, courseMap) - assignmentPreferenceCost(person, fromId, courseMap);
 }
 
-function debateActionsForState(event, openSet, lockSet, courseMap, state) {
+function gradeGroupActionsForState(event, openSet, lockSet, courseMap, state) {
   const plans = [];
   const loads = new Map([...state.byCourse.entries()].map(([courseId, people]) => [courseId, people.length]));
   const openCourses = [...openSet].map((id) => courseMap.get(id)).filter(Boolean);
@@ -1828,25 +1820,27 @@ function debateActionsForState(event, openSet, lockSet, courseMap, state) {
     const target = violation.course;
     const groupKey = violation.key;
     const targetPeople = state.byCourse.get(target.id) || [];
-    const targetCounts = debateGroupCountsForPeople(targetPeople);
+    const targetCounts = gradeGroupCountsForPeople(targetPeople);
     const targetDistance = [...targetCounts.values()].reduce((sum, count) => {
-      const remainder = count % DEBATE_GROUP_SIZE;
-      return sum + Math.min(remainder, DEBATE_GROUP_SIZE - remainder);
+      const remainder = count % GRADE_GROUP_SIZE;
+      return sum + Math.min(remainder, GRADE_GROUP_SIZE - remainder);
     }, 0);
     const localDistanceAfter = (outGroup, inGroup) => {
       const counts = new Map(targetCounts);
       if (outGroup && counts.has(outGroup)) counts.set(outGroup, Math.max(0, (counts.get(outGroup) || 0) - 1));
       if (inGroup && counts.has(inGroup)) counts.set(inGroup, (counts.get(inGroup) || 0) + 1);
       return [...counts.values()].reduce((sum, count) => {
-        const remainder = count % DEBATE_GROUP_SIZE;
-        return sum + Math.min(remainder, DEBATE_GROUP_SIZE - remainder);
+        const remainder = count % GRADE_GROUP_SIZE;
+        return sum + Math.min(remainder, GRADE_GROUP_SIZE - remainder);
       }, 0);
     };
     const members = targetPeople
-      .filter((person) => !person.fixed && debateGroupForGrade(parseGrade(person.className))?.key === groupKey)
+      .filter((person) => !person.fixed && gradeGroupForGrade(parseGrade(person.className))?.key === groupKey)
       .sort((a, b) => a.id.localeCompare(b.id, "de"));
 
-    // Einzelne Person aus der zu reparierenden Wettbewerbsgruppe herausnehmen.
+    // Einzelne Person aus der zu reparierenden Jahrgangsgruppe in einen anderen
+    // zulässigen Kurs verschieben. Ein Ziel ohne Kurs wird bewusst nicht erzeugt:
+    // Teilbarkeit darf keine bestehende Zuteilung entfernen.
     for (const person of members.slice(0, 36)) {
       const destinations = openCourses
         .filter((course) => course.id !== target.id)
@@ -1854,12 +1848,10 @@ function debateActionsForState(event, openSet, lockSet, courseMap, state) {
         .filter((course) => courseEligible(person, course, lockSet, event.settings.allowOutside))
         .map((course) => ({
           toId: course.id,
-          delta: debateMoveDelta(person, target.id, course.id, courseMap),
+          delta: gradeGroupMoveDelta(person, target.id, course.id, courseMap),
         }))
         .sort((a, b) => a.delta - b.delta || a.toId.localeCompare(b.toId, "de"))
         .slice(0, 4);
-      destinations.push({ toId: "", delta: debateMoveDelta(person, target.id, "", courseMap) });
-
       for (const destination of destinations) {
         plans.push({
           changes: [{ person, toId: destination.toId }],
@@ -1873,11 +1865,11 @@ function debateActionsForState(event, openSet, lockSet, courseMap, state) {
     if ((loads.get(target.id) || 0) < target.max) {
       const outsiders = event.participants
         .filter((person) => !person.fixed && (state.assignments.get(person.id) || "") !== target.id)
-        .filter((person) => debateGroupForGrade(parseGrade(person.className))?.key === groupKey)
+        .filter((person) => gradeGroupForGrade(parseGrade(person.className))?.key === groupKey)
         .filter((person) => courseEligible(person, target, lockSet, event.settings.allowOutside))
         .map((person) => {
           const fromId = state.assignments.get(person.id) || "";
-          return { person, fromId, delta: debateMoveDelta(person, fromId, target.id, courseMap) };
+          return { person, fromId, delta: gradeGroupMoveDelta(person, fromId, target.id, courseMap) };
         })
         .sort((a, b) => a.delta - b.delta || a.person.id.localeCompare(b.person.id, "de"))
         .slice(0, 48);
@@ -1892,22 +1884,22 @@ function debateActionsForState(event, openSet, lockSet, courseMap, state) {
     }
 
     // Bei voller bzw. exakt belegter Durchführung kann ein Tausch beide
-    // Wettbewerbsgruppen in einem atomaren Schritt korrigieren.
+    // Jahrgangsgruppen in einem atomaren Schritt korrigieren.
     const swapInsiders = targetPeople.filter((person) => !person.fixed).slice(0, 28);
     const swapOutsiders = event.participants
       .filter((person) => !person.fixed && (state.assignments.get(person.id) || "") !== target.id)
       .filter((person) => courseEligible(person, target, lockSet, event.settings.allowOutside))
       .map((person) => {
         const fromId = state.assignments.get(person.id) || "";
-        return { person, fromId, deltaToTarget: debateMoveDelta(person, fromId, target.id, courseMap) };
+        return { person, fromId, deltaToTarget: gradeGroupMoveDelta(person, fromId, target.id, courseMap) };
       })
       .sort((a, b) => a.deltaToTarget - b.deltaToTarget || a.person.id.localeCompare(b.person.id, "de"))
       .slice(0, 36);
 
     for (const inside of swapInsiders) {
-      const insideGroup = debateGroupForGrade(parseGrade(inside.className))?.key || "other";
+      const insideGroup = gradeGroupForGrade(parseGrade(inside.className))?.key || "other";
       for (const outside of swapOutsiders) {
-        const outsideGroup = debateGroupForGrade(parseGrade(outside.person.className))?.key || "other";
+        const outsideGroup = gradeGroupForGrade(parseGrade(outside.person.className))?.key || "other";
         if (insideGroup === outsideGroup) continue;
         const estimatedDelta = localDistanceAfter(insideGroup, outsideGroup) - targetDistance;
         if (estimatedDelta >= 0) continue;
@@ -1915,8 +1907,8 @@ function debateActionsForState(event, openSet, lockSet, courseMap, state) {
           const donor = courseMap.get(outside.fromId);
           if (!donor || !courseEligible(inside, donor, lockSet, event.settings.allowOutside)) continue;
         }
-        const delta = debateMoveDelta(inside, target.id, outside.fromId, courseMap)
-          + debateMoveDelta(outside.person, outside.fromId, target.id, courseMap);
+        const delta = gradeGroupMoveDelta(inside, target.id, outside.fromId, courseMap)
+          + gradeGroupMoveDelta(outside.person, outside.fromId, target.id, courseMap);
         plans.push({
           changes: [
             { person: inside, toId: outside.fromId },
@@ -1932,39 +1924,50 @@ function debateActionsForState(event, openSet, lockSet, courseMap, state) {
   const actions = [];
   const orderedPlans = plans.sort((a, b) => a.estimatedDelta - b.estimatedDelta || a.delta - b.delta).slice(0, 260);
   for (const plan of orderedPlans) {
-    const candidate = debateCandidateState(event, openSet, courseMap, state, plan.changes, plan.delta);
+    const candidate = gradeGroupCandidateState(event, openSet, courseMap, state, plan.changes, plan.delta);
     if (!candidate || candidate.distance > state.distance + 1) continue;
     actions.push(candidate);
     if (actions.length >= 80) break;
   }
-  return actions.sort((a, b) => a.distance - b.distance || a.cost - b.cost || a.imbalance - b.imbalance);
+  return actions.sort(compareGradeGroupStates);
 }
 
-function repairDebateGroups(event, openSet, lockSet, courseMap, assignments, loads) {
-  const enabled = [...openSet].some((courseId) => courseMap.get(courseId)?.debateRule?.enabled);
+function compareGradeGroupStates(a, b) {
+  return a.unassigned - b.unassigned
+    || a.violations.length - b.violations.length
+    || a.distance - b.distance
+    || a.cost - b.cost
+    || a.imbalance - b.imbalance;
+}
+
+function repairGradeGroups(event, openSet, lockSet, courseMap, assignments, loads) {
+  const enabled = [...openSet].some((courseId) => courseMap.get(courseId)?.gradeGroupRule?.enabled);
   if (!enabled) return;
 
-  const initialAnalysis = debateAssignmentState(event, openSet, courseMap, assignments);
+  const initialAnalysis = gradeGroupAssignmentState(event, openSet, courseMap, assignments);
   if (!initialAnalysis.violations.length) return;
 
   const initial = { assignments: new Map(assignments), cost: 0, ...initialAnalysis };
   const maxDepth = Math.min(18, Math.max(6, initial.violations.length * 3 + initial.distance * 2));
   const beamWidth = 40;
   let frontier = [initial];
-  const seen = new Map([[debateAssignmentHash(event, initial.assignments), 0]]);
+  const seen = new Map([[gradeGroupAssignmentHash(event, initial.assignments), 0]]);
   let solution = null;
+  let bestFallback = initial;
 
   for (let depth = 0; depth <= maxDepth; depth += 1) {
+    const bestAtDepth = [...frontier].sort(compareGradeGroupStates)[0];
+    if (bestAtDepth && compareGradeGroupStates(bestAtDepth, bestFallback) < 0) bestFallback = bestAtDepth;
     const complete = frontier
       .filter((state) => state.distance === 0)
-      .sort((a, b) => a.cost - b.cost || a.imbalance - b.imbalance)[0];
+      .sort(compareGradeGroupStates)[0];
     if (complete) { solution = complete; break; }
     if (depth === maxDepth) break;
 
     const next = [];
     for (const state of frontier) {
-      for (const candidate of debateActionsForState(event, openSet, lockSet, courseMap, state)) {
-        const hash = debateAssignmentHash(event, candidate.assignments);
+      for (const candidate of gradeGroupActionsForState(event, openSet, lockSet, courseMap, state)) {
+        const hash = gradeGroupAssignmentHash(event, candidate.assignments);
         const previousCost = seen.get(hash);
         if (previousCost !== undefined && previousCost <= candidate.cost) continue;
         seen.set(hash, candidate.cost);
@@ -1972,15 +1975,14 @@ function repairDebateGroups(event, openSet, lockSet, courseMap, assignments, loa
       }
     }
     frontier = next
-      .sort((a, b) => a.distance - b.distance || a.cost - b.cost || a.imbalance - b.imbalance)
+      .sort(compareGradeGroupStates)
       .slice(0, beamWidth);
     if (!frontier.length) break;
   }
 
-  if (!solution) {
-    const first = initial.violations[0];
-    throw new Error(`${first.course.name}${first.course.session ? ` – Gruppe ${first.course.session}` : ""}: ${first.label} ist mit ${first.count} Schülern belegt. Die Zahl muss durch ${DEBATE_GROUP_SIZE} teilbar sein. Mit den aktuellen Wünschen, Kapazitäten, Sperrungen, festen Setzungen und sonstigen harten Regeln konnte keine zulässige Vierergruppen-Verteilung gefunden werden.`);
-  }
+  // Ist keine exakte Teilbarkeit erreichbar, wird die beste gefundene vollständige
+  // Zuteilung übernommen und später mit einem konkreten Hinweis ausgegeben.
+  solution ||= bestFallback;
 
   assignments.clear();
   for (const [personId, courseId] of solution.assignments) assignments.set(personId, courseId);
@@ -2015,23 +2017,59 @@ function optimizeEventSingle(raw) {
     repairCourseGradeLimits(event, openSet, lockSet, courseMap, assignments, loads, targets);
     repairFlexibleRules(event, openSet, lockSet, courseMap, assignments, loads, targets, "hard");
     repairFlexibleRules(event, openSet, lockSet, courseMap, assignments, loads, targets, "preferred");
-    repairDebateGroups(event, openSet, lockSet, courseMap, assignments, loads);
+    repairGradeGroups(event, openSet, lockSet, courseMap, assignments, loads);
 
     const finalPeopleByCourse = peopleByCourse(event, assignments);
     const finalGradeLimitViolations = courseGradeLimitViolations(event, openSet, courseMap, assignments);
-    if (event.settings.gradeLimitsRelaxed && finalGradeLimitViolations.length) {
-      const details = finalGradeLimitViolations.slice(0, 8).map((violation) => {
-        const bound = violation.kind === "gradeMax" ? `höchstens ${violation.max}` : `mindestens ${violation.min}`;
-        return `${violation.course.name}${violation.course.session ? ` – Gruppe ${violation.course.session}` : ""}: Jg. ${violation.grade} mit ${violation.count} statt ${bound}`;
-      });
-      const more = finalGradeLimitViolations.length > details.length ? `; ${finalGradeLimitViolations.length - details.length} weitere Abweichung(en)` : "";
-      warnings.push(`Die Jahrgangsgrenzen waren nicht gleichzeitig vollständig erfüllbar. Deshalb wurde die bestmögliche Verteilung berechnet: ${details.join("; ")}${more}.`);
+    const finalGradeGroupViolations = gradeGroupAssignmentState(event, openSet, courseMap, assignments).violations;
+    const finalCohortViolations = findCohortViolations(event, openSet, courseMap, assignments).violations;
+    const ruleSummary = summarizeFlexibleRules(event, openSet, courseMap, assignments);
+    const allRuleViolations = [...ruleSummary.hard, ...ruleSummary.preferred];
+    const courseRuleHints = new Map();
+    const addCourseHint = (courseId, message) => {
+      if (!courseRuleHints.has(courseId)) courseRuleHints.set(courseId, []);
+      const hints = courseRuleHints.get(courseId);
+      if (!hints.includes(message)) hints.push(message);
+    };
+    const deviationMessages = [];
+
+    for (const violation of finalGradeLimitViolations) {
+      const bound = violation.kind === "gradeMax" ? `höchstens ${violation.max}` : `mindestens ${violation.min}`;
+      const detail = `Jg. ${violation.grade}: ${violation.count} statt ${bound}`;
+      addCourseHint(violation.course.id, detail);
+      deviationMessages.push(`${violation.course.name}${violation.course.session ? ` – Gruppe ${violation.course.session}` : ""}: ${detail}`);
+    }
+    for (const violation of finalGradeGroupViolations) {
+      const detail = `${violation.label}: ${violation.count}; Gruppengröße ${violation.groupSize}, Abweichung ${violation.distance}`;
+      addCourseHint(violation.course.id, detail);
+      deviationMessages.push(`${violation.course.name}${violation.course.session ? ` – Gruppe ${violation.course.session}` : ""}: ${detail}`);
+    }
+    for (const violation of finalCohortViolations) {
+      const detail = `${cohortLabelFromKey(violation.cohortKey)}: ${violation.count} statt mindestens ${violation.min}`;
+      addCourseHint(violation.course.id, detail);
+      deviationMessages.push(`${violation.course.name}${violation.course.session ? ` – Gruppe ${violation.course.session}` : ""}: ${detail}`);
+    }
+    for (const violation of allRuleViolations) {
+      const detail = `${violation.label}: ${violation.count} statt mindestens ${violation.min}`;
+      addCourseHint(violation.course.id, detail);
+      deviationMessages.push(`${violation.course.name}${violation.course.session ? ` – Gruppe ${violation.course.session}` : ""}: ${detail}`);
+    }
+
+    if (deviationMessages.length) {
+      const details = deviationMessages.slice(0, 10);
+      const more = deviationMessages.length > details.length ? `; ${deviationMessages.length - details.length} weitere Abweichung(en)` : "";
+      warnings.push(`Bestmögliche Zuteilung mit ${deviationMessages.length} Regelabweichung(en): ${details.join("; ")}${more}. Kein Schüler wurde allein zur Einhaltung dieser Regeln aus einer zulässigen Zuteilung entfernt.`);
     }
 
     const participantResults = event.participants.map((person) => {
       const courseId = assignments.get(person.id) || "";
       const course = courseId ? courseMap.get(courseId) : null;
       const type = rankLabel(person, course);
+      const noteParts = [];
+      if (type === "Nicht zugeteilt") noteParts.push("Kein zulässiger Platz verfügbar – Kapazitäten, Kurszugang und Wünsche prüfen");
+      else if (type === "Kein Wunsch") noteParts.push("Außerhalb der vier Wünsche");
+      const ruleHints = courseId ? courseRuleHints.get(courseId) || [] : [];
+      if (ruleHints.length) noteParts.push(`Zugeordnet mit Regelhinweis: ${ruleHints.join("; ")}`);
       return {
         personId: person.id,
         firstName: person.firstName,
@@ -2044,9 +2082,13 @@ function optimizeEventSingle(raw) {
         courseTypeName: course?.name || "",
         session: course?.session || "",
         type,
-        note: type === "Nicht zugeteilt" ? "Kapazitäten oder Zugangsregeln prüfen" : type === "Kein Wunsch" ? "Außerhalb der vier Wünsche" : "",
+        note: noteParts.join(" · "),
       };
     });
+    const unassignedCount = participantResults.filter((person) => person.type === "Nicht zugeteilt").length;
+    if (unassignedCount) {
+      warnings.push(`${unassignedCount} Schüler konnten nicht zugeteilt werden, weil für sie kein zulässiger freier Kursplatz vorhanden war. Regelvorgaben allein führen nicht mehr zu einer Nichtzuteilung.`);
+    }
 
     const courseResults = event.workshops.map((course) => {
       const open = openSet.has(course.id);
@@ -2070,24 +2112,25 @@ function optimizeEventSingle(raw) {
             return sum + (person && parseGrade(person.className) === limit.grade ? 1 : 0);
           }, 0),
         })) : [],
-        debateGroupSummary: open ? debateGroupSummaryForPeople(course, finalPeopleByCourse.get(course.id) || []) : [],
-        debateGroupImbalance: open ? debateGroupImbalanceForPeople(course, finalPeopleByCourse.get(course.id) || []) : 0,
+        gradeGroupSummary: open ? gradeGroupSummaryForPeople(course, finalPeopleByCourse.get(course.id) || []) : [],
+        gradeGroupImbalance: open ? gradeGroupImbalanceForPeople(course, finalPeopleByCourse.get(course.id) || []) : 0,
         status: open ? "Findet statt" : "Entfällt (optional)",
       };
     });
 
-    const ruleSummary = summarizeFlexibleRules(event, openSet, courseMap, assignments);
-    const allRuleViolations = [...ruleSummary.hard, ...ruleSummary.preferred];
     for (const course of courseResults) {
       const courseViolations = allRuleViolations.filter((item) => item.course.id === course.id);
-      const debateViolations = (course.debateGroupSummary || []).filter((item) => item.remainder !== 0);
+      const groupViolations = finalGradeGroupViolations.filter((item) => item.course.id === course.id);
       const courseGradeViolations = finalGradeLimitViolations.filter((item) => item.course.id === course.id);
+      const courseCohortViolations = finalCohortViolations.filter((item) => item.course.id === course.id);
       course.ruleHardViolations = courseViolations.filter((item) => item.rule.mode === "hard").length
-        + debateViolations.length
-        + (event.settings.gradeLimitsRelaxed ? 0 : courseGradeViolations.length);
-      course.rulePreferredViolations = courseViolations.filter((item) => item.rule.mode === "preferred").length
-        + (event.settings.gradeLimitsRelaxed ? courseGradeViolations.length : 0);
-      course.ruleStatus = course.ruleHardViolations ? "Regel verletzt" : course.rulePreferredViolations ? "Hinweis" : "Regeln erfüllt";
+        + groupViolations.length
+        + courseGradeViolations.length
+        + courseCohortViolations.length;
+      course.rulePreferredViolations = courseViolations.filter((item) => item.rule.mode === "preferred").length;
+      course.ruleDeviations = course.ruleHardViolations + course.rulePreferredViolations;
+      course.ruleStatus = course.ruleDeviations ? "Bestmögliche Abweichung" : "Regeln erfüllt";
+      course.ruleHints = courseRuleHints.get(course.id) || [];
       course.ruleDetails = courseViolations.map((item) => ({
         mode: item.rule.mode, type: item.rule.type, min: item.min, label: item.label, count: item.count,
       }));
@@ -2112,11 +2155,17 @@ function optimizeEventSingle(raw) {
     const maxFourthPerCourse = badWishByCourse.length ? Math.max(...badWishByCourse.map((item) => item.fourth)) : 0;
     const thirdConcentration = badWishByCourse.reduce((sum, item) => sum + item.third * item.third, 0);
     const fourthConcentration = badWishByCourse.reduce((sum, item) => sum + item.fourth * item.fourth, 0);
-    const debateGroupImbalance = openCourses.reduce((sum, course) => sum + (course.debateGroupImbalance || 0), 0);
+    const gradeGroupImbalance = openCourses.reduce((sum, course) => sum + (course.gradeGroupImbalance || 0), 0);
     const hardRuleViolations = courseResults.reduce((sum, course) => sum + (course.ruleHardViolations || 0), 0);
+    const preferredRuleViolations = courseResults.reduce((sum, course) => sum + (course.rulePreferredViolations || 0), 0);
+    const ruleViolationCount = hardRuleViolations + preferredRuleViolations;
     const gradeLimitDeviation = finalGradeLimitViolations.reduce((sum, violation) => sum + (
       violation.kind === "gradeMax" ? violation.count - violation.max : violation.min - violation.count
     ), 0);
+    const gradeGroupDeviation = finalGradeGroupViolations.reduce((sum, violation) => sum + violation.distance, 0);
+    const cohortDeviation = finalCohortViolations.reduce((sum, violation) => sum + Math.max(1, violation.min - violation.count), 0);
+    const flexibleRuleDeviation = allRuleViolations.reduce((sum, violation) => sum + Math.max(1, violation.min - violation.count), 0);
+    const ruleDeviationScore = gradeLimitDeviation + gradeGroupDeviation + cohortDeviation + flexibleRuleDeviation;
 
     return {
       ok: true,
@@ -2136,11 +2185,13 @@ function optimizeEventSingle(raw) {
         outside: counts.get("Kein Wunsch") || 0,
         unassigned: counts.get("Nicht zugeteilt") || 0,
         meanDeviation,
-        debateGroupImbalance,
-        preferredRuleViolations: ruleSummary.preferred.length
-          + (event.settings.gradeLimitsRelaxed ? finalGradeLimitViolations.length : 0),
+        gradeGroupImbalance,
+        preferredRuleViolations,
         hardRuleViolations,
+        ruleViolationCount,
+        ruleDeviationScore,
         gradeLimitDeviation,
+        gradeGroupDeviation,
         maxThirdPerCourse,
         maxFourthPerCourse,
         thirdConcentration,
@@ -2193,12 +2244,14 @@ function variantForQualityRun(raw, runIndex) {
 function qualityTuple(result) {
   const s = result?.stats ?? {};
   return [
-    // Zuerst muss die Lösung zulässig und vollständig sein.
-    -(s.hardRuleViolations ?? 0),
-    // Bei automatisch gelockerten Jahrgangsgrenzen gewinnt die kleinste
-    // unvermeidbare Gesamtabweichung vor allen Wunsch- und Ausgleichszielen.
-    -(s.gradeLimitDeviation ?? 0),
+    // Oberstes Ziel: möglichst jeden Schüler einem zulässigen Platz zuordnen.
+    // Erst danach werden Anzahl und Stärke unvermeidbarer Regelabweichungen
+    // verglichen. So gewinnt nie eine formal sauberere, aber unvollständigere
+    // Zuteilung gegen eine vollständige Bestmöglich-Lösung.
     -(s.unassigned ?? 0),
+    -(s.hardRuleViolations ?? 0),
+    -(s.ruleViolationCount ?? 0),
+    -(s.ruleDeviationScore ?? 0),
     -(s.outside ?? 0),
     // Viertwunsch ist die absolute Notkategorie, Drittwunsch nur Notfall.
     -(s.fourth ?? 0),
@@ -2213,7 +2266,7 @@ function qualityTuple(result) {
     -(s.thirdConcentration ?? 0),
     // Danach folgen weiche Regeln und der Lehrerbelastungsausgleich.
     -(s.preferredRuleViolations ?? 0),
-    -(s.debateGroupImbalance ?? 0),
+    -(s.gradeGroupImbalance ?? 0),
     -(s.largeCourseSpread ?? 0),
     -(s.meanDeviation ?? 0),
   ];
