@@ -4,19 +4,9 @@ Statische Browseranwendung für bis zu **500 Teilnehmer und 30 Durchführungen**
 
 ## Neu in dieser Version
 
-### Gewichtung Wünsche ↔ Jahrgangsverteilung (Version 9.6)
-
-Unter **Übersicht → Einstellungen** steht jetzt ein Regler von `0 %` bis `100 %` zur Verfügung:
-
-- `0 %`: Wünsche werden maximal geschützt; unvermeidbare Jahrgangsabweichungen werden ausgewiesen.
-- `50 %`: Wünsche und Jahrgangsverteilung werden ausgewogen berücksichtigt (empfohlen).
-- `100 %`: Die bestmögliche Jahrgangsverteilung hat Vorrang vor der Wunschqualität.
-
-Der Solver merkt sich während seiner Suche mehrere vollständige Zwischenlösungen und wählt anhand des Reglers die passendste aus. Die Gewichtung betrifft Jahrgangs-Minima/-Maxima, Kohorten-, Jahrgangsgruppen- und weitere Zusammensetzungsregeln. Unverändert absolut bleiben vollständige Zuteilung soweit ein zulässiger Platz existiert, Kapazitäten, Kurszugang, Sperrungen und feste Setzungen. Die Einstellung wird lokal und in JSON-Projektsicherungen gespeichert; alte Projekte starten automatisch mit `50 %`.
-
 ### Vollständige Bestmöglich-Zuteilung (Version 9.5)
 
-Der Optimierer bevorzugt zuerst die Lösung mit den wenigsten unzugeteilten Schülern. Danach steuert in Version 9.6 der Gewichtungsregler den Zielkonflikt zwischen Regelabweichungen und Wünschen; anschließend wird der Kursausgleich bewertet.
+Der Optimierer bevorzugt jetzt zuerst die Lösung mit den wenigsten unzugeteilten Schülern. Danach werden die Anzahl und die Stärke unvermeidbarer Regelabweichungen, anschließend Wünsche und Kursausgleich bewertet.
 
 Jahrgangs-Minima/-Maxima, Kohorten- und Gruppenregeln werden zunächst durch Verschieben, Tauschen und eine globale Kurssuche zu erfüllen versucht. Ist das nicht vollständig möglich, bleibt die bestmögliche zulässige Zuteilung erhalten. Das Programm nennt Kurs, Ist-Wert und Zielwert sowohl im Ergebnis als auch im Hinweisfeld der betroffenen Schüler. Verbindlich bleiben Kurskapazitäten, Kurszugang, Sperrungen, feste Setzungen sowie die gesamte Mindest-/Maximalbelegung.
 
