@@ -226,3 +226,24 @@ dialog form { display: grid; gap: 1rem; }
 .checkbox-row small { color: var(--muted); line-height: 1.35; }
 .checkbox-row:has(input:disabled) { opacity: .58; cursor: not-allowed; }
 .debate-result { border-left-color: #547a65; background: #f0f7f2; }
+
+/* V9.6: Gewichtung Wünsche ↔ Jahrgangsverteilung */
+.weight-control {
+  display: grid;
+  align-content: start;
+  gap: .35rem;
+  padding: .8rem;
+  border: 1px solid #9ab6ca;
+  border-radius: 10px;
+  background: #f4f9fc;
+}
+.weight-control input[type="range"] {
+  width: 100%;
+  margin: .25rem 0 0;
+  accent-color: var(--navy);
+}
+.weight-control output {
+  color: var(--navy);
+  font-size: .9rem;
+  font-weight: 800;
+}
