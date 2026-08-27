@@ -1,38 +1,23 @@
-# Patch V9.5.0 installieren
+# Patch V9.6.0 einspielen
 
-Dieser Patch ist für die vollständige Version V9.4.0 vorgesehen. Er enthält nur neue beziehungsweise geänderte Dateien.
+Dieses Patch setzt **V9.5.0** voraus und ergänzt den Gewichtungsregler **„Wünsche ↔ Jahrgangsverteilung“**.
 
-## GitHub-Upload
+## GitHub Pages mit `docs`-Ordner
 
-1. Diese ZIP entpacken.
-2. Den **Inhalt** des entpackten Patch-Ordners in das Stammverzeichnis des vorhandenen GitHub-Repositorys hochladen.
-3. Bei allen Rückfragen **gleichnamige Dateien ersetzen**.
-4. Die Änderungen mit `Commit changes` speichern.
-5. Wenn GitHub Pages aus `main /docs` veröffentlicht, muss keine weitere Einstellung geändert werden.
-6. Nach der Veröffentlichung die Anwendung einmal hart neu laden:
-   - macOS: `Cmd + Umschalt + R`
-   - Windows/Linux: `Strg + F5`
+1. ZIP entpacken.
+2. Den **gesamten Inhalt** dieses Patch-Ordners in das GitHub-Repository hochladen.
+3. Bei gleichnamigen Dateien **Ersetzen** bestätigen.
+4. Warten, bis GitHub Pages die Änderung veröffentlicht hat.
+5. Die Anwendung einmal hart neu laden (`Strg`/`Cmd` + `Umschalt` + `R`).
 
-Wichtig: Nicht den Patch-Ordner selbst als zusätzliche Unterebene hochladen. Im Repository müssen beispielsweise direkt `docs`, `public`, `src` und `package.json` sichtbar sein.
+Die veröffentlichte Anwendung liegt in `docs`. Der ebenfalls enthaltene Ordner `dist` ist für Installationen gedacht, die diesen Veröffentlichungsordner verwenden.
 
-## Sofort wirksam auf GitHub Pages
+## Neue Bedienung
 
-Für die veröffentlichte Website sind insbesondere diese Dateien entscheidend:
+Der Regler befindet sich unter **Übersicht → Einstellungen**:
 
-- `docs/index.html`
-- `docs/assets/app.js`
-- `docs/sw.js`
+- `0 %`: Wünsche maximal schützen
+- `50 %`: ausgewogen (Standard und Empfehlung)
+- `100 %`: Jahrgangsverteilung maximal berücksichtigen
 
-Die übrigen Dateien halten Quellcode, Tests, Build-Ausgabe und Dokumentation auf demselben Versionsstand.
-
-## Inhaltliche Änderungen
-
-- Vollständige Zuteilung steht vor der Einhaltung von Zusammensetzungsregeln.
-- Eine Jahrgangsregel darf die Zahl unzugeteilter Schüler nicht erhöhen.
-- Nicht exakt erfüllbare Regeln erzeugen eine Bestmöglich-Zuteilung mit konkreten Hinweisen.
-- Hinweise erscheinen beim Kurs und bei den zugeteilten Schülern.
-- „Debattierregel“ heißt jetzt „Jahrgangsgruppen-Regel“.
-- Alte JSON-Projekte und alte Excel-Spalten bleiben importierbar.
-
-Die technische Beschreibung steht in `UPDATE_V9_5_0_BESTMOEGLICHE_ZUTEILUNG.md`.
-
+Kapazitäten, Kurszugang, Sperrungen, feste Setzungen und eine möglichst vollständige Zuteilung bleiben von diesem Regler unberührt.
